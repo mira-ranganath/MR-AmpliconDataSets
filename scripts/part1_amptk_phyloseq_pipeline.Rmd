@@ -7,6 +7,7 @@ bibliography: references.bib
 ---
 
 **NOTE:** run this script to ensure you are in the correct directory:
+
 ```{r, setup}
 knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ```
@@ -14,58 +15,6 @@ knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
 ## **Bioinformatic** steps in AMPtk
 
 Here’s a step-by-step guide to the **bioinformatic steps in AMPtk** for processing amplicon sequencing data. AMPtk is a pipeline for analyzing amplicon data (e.g., ITS, 16S, 18S) and includes steps for quality filtering, clustering, chimera removal, and taxonomic assignment. Below is a detailed workflow:
-
-**NOTE:** this script runs AMPtk through docker
-
-# Installation of AMPtk and Docker
-
-## **1. Install AMPtk for Docker**
-
-Skip this step if you already have AMPtk installed on your computer.
-
-To install AMPtk for Docker on your computer run the [following commands](https://amptk.readthedocs.io/en/latest/index.html#run-from-docker):
-
-```{zsh echo=FALSE}
-mkdir -p ~/bin
-cd ~/bin
-wget -O amptk-docker https://raw.githubusercontent.com/nextgenusfs/amptk/master/amptk-docker
-chmod +x amptk-docker
-```
-
-Make sure to add the following to your `~/.bashrc` or `~/.bash_profile` if you are using `bash`. If you are using `zsh`, add it to your `~/.zshrc`, e.g.:
-
-```{zsh echo=FALSE}
-echo 'export PATH=$PATH:~/bin' >> ~/.bashrc
-source ~/.bashrc
-```
-
-## **2. Install Docker**
-
-Skip this step if you already have AMPtk installed on your computer.
-
-To install docker on your computer, follow the instructions below:
-
-#### **On a Mac:**
-
-```{zsh echo=FALSE}
-brew install --cache docker
-```
-
-#### **with Linux:**
-
-```{bash echo=FALSE}
-sudo apt update
-sudo apt install docker.io
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-```
-
-Now log out and log back in for changes to take effect. The remaining steps should be the same for Unix and Linux.
-
-```{bash echo=FALSE}
-docker pull nextgenusfs/amptk
-```
 
 # Set up
 
@@ -79,7 +28,7 @@ export ITS2_FUN=AGCCTCCGCTTATTGATATGCTTAART
 export ITS1F=CTTGGTCATTTAGAGGAAGTAA
 export ITS2=GCTGCGTTCTTCATCGATGC
 
-amptk-docker illumina \
+amptk illumina \
   -i data/raw_data/sequencing \
   -o trimmed \
   -f $ITS5_8S_FUN -r $ITS2_FUN \
@@ -94,15 +43,15 @@ amptk-docker illumina \
 1 error in alignment allowed; default of 97% similarity
 
 ```{bash, engine.opts='-l'}
-amptk-docker cluster -i trimmed.demux.fq.gz -e 1.0 -o clustered   
+amptk cluster -i trimmed.demux.fq.gz -e 1.0 -o clustered   
 ```
 
 ## Step 3: Filter table based on what is in negative controls
 
--d negatives will filter your reads to remove contaminants and then drop your negative controls; adjust names as needed
+-d negatives will filter your reads to remove contaminants and then drop your negative controls; adjust names as needed (-d negatives F96-NegPCR, F107Extraction-Control) \<-- add back in
 
 ```{bash, engine.opts='-l'}
-amptk-docker filter -i clustered.otu_table.txt -f clustered.cluster.otus.fa -d negatives F96-NegPCR, F107Extraction-Control -p 0.005 # Set p-value threshold
+amptk filter -i clustered.otu_table.txt -f clustered.cluster.otus.fa -d negatives N-N-D1, N-N-D3 -p 0.005 # Set p-value threshold
 ```
 
 ## Step 4: Assign taxonomy (used ITS database)
@@ -110,7 +59,7 @@ amptk-docker filter -i clustered.otu_table.txt -f clustered.cluster.otus.fa -d n
 Change the -o STUDY to your project name eg Westside
 
 ```{bash, engine.opts='-l'}
-amptk-docker taxonomy -f clustered.cluster.otus.fa -i clustered.otu_table.txt -m trimmed.mapping_file.txt -d ITS -o STUDY
+amptk taxonomy -f clustered.cluster.otus.fa -i clustered.otu_table.txt -m trimmed.mapping_file.txt -d ITS -o STUDY
 ```
 
 ## Step 5: Reorganize files for clarity;
@@ -227,14 +176,14 @@ seq_data_rownames <- Phyloseq %>%
 
 ##Metadata sample ID info must match those in phyloseq object
 metadata <- read.csv(
-  "data/processed_data/metadata/STUDY_metadata.csv")%>% 
+  "data/processed_data/metadata/COL_pilot_metadata.csv")%>% 
+  rename(SampleUnique=sample_ID) %>% 
   filter(!if_all(everything(), ~ . == "" | is.na(.)))%>% 
   tibble::column_to_rownames("SampleUnique")
 
 
 # Check if row names are identical
-if (identical(rownames(seq_data_rownames), 
-              rownames(metadata))) {
+if (identical(sort(rownames(seq_data_rownames)), sort(rownames(metadata)))) {
   print("Row names are identical.")
 } else {
   print("Row names are NOT identical.")
@@ -252,7 +201,7 @@ Replace STUDY with your project name
 saveRDS(Phyloseq, file = "data/processed_data/phyloseq/STUDY_phyloseq_notrare.rds")
 ```
 
-### Rarefaction and saving final rarefied OTU table 
+### Rarefaction and saving final rarefied OTU table
 
 Replace STUDY with your project name
 

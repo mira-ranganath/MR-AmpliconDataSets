@@ -53,10 +53,16 @@ Make sure to edit the name of your OTU table (eg STUDY_phyloseq_rare.rds)
 
 ```{r}
 seqdata_RARE<-readRDS(
-  "data/processed_data/STUDY_phyloseq_rare.rds")
+  "data/processed_data/phyloseq/STUDY_phyloseq_rare.rds")
 seqdata_NOTRARE<-readRDS(
-  "data/processed_data/STUDY_phyloseq_notrare.rds")
+  "data/processed_data/phyloseq/STUDY_phyloseq_notrare.rds")
 ```
+
+###Filter out plant reads
+```{r}
+seqdata_RARE <- subset_taxa(seqdata_RARE, Kingdom == "Fungi")
+```
+
 
 ### Ordination (NMDS)
 
@@ -67,7 +73,7 @@ Using default of bray for distance (bray is default method for ordinate function
 ORDtotalvals<-ordinate(seqdata_RARE, "NMDS")
 
 ORD<-plot_ordination(seqdata_RARE, 
-              ORDtotalvals, color="SiteID")+
+              ORDtotalvals, color="burn_temp_C", shape="burn_status")+
               theme_minimal()
 ORD
 ```
@@ -75,10 +81,9 @@ ORD
 ### Quick barplot
 
 ```{r message=FALSE, warning=FALSE}
-
 # Step 1: Merge samples by a grouping variable (e.g., "SampleType")
 ps_merged <- seqdata_RARE %>%
-  merge_samples("SampleType")
+  merge_samples("burn_temp_C")
 
 # Step 2: Convert to relative abundance
 ps_rel <- ps_merged %>%
@@ -86,26 +91,26 @@ ps_rel <- ps_merged %>%
 
 # Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
 ps_taxa <- ps_rel %>%
-  tax_glom(taxrank = "Order")
+  tax_glom(taxrank = "Family")
 
 # Step 4: Melt the phyloseq object for visualization
 ps_melt <- ps_taxa %>%
   psmelt() %>%
   mutate(
     Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
-    Order = ifelse(Abundance < 0.1, "Other", Order)   # Group low-abundance taxa as "Other"
+    Family = ifelse(Abundance < 0.05, "Other", Family)   # Group low-abundance taxa as "Other"
   )
 
 # Step 5: Create the bar plot
 barplot <- ps_melt %>%
-  ggplot(aes(x = Sample, y = Abundance, fill = Phylum)) +
+  ggplot(aes(x = Sample, y = Abundance, fill = Family)) +
   geom_bar(stat = "identity", position = "stack") +
   labs(
     x = "Group",
     y = "Relative Abundance",
-    fill = "Phylum") +
+    fill = "Family") +
   theme_minimal() +
-  scale_fill_viridis_d(option = "plasma")  
+  scale_fill_viridis_d(option = "plasma")
     # Use viridis color scale
 
 # Display the plot
@@ -126,7 +131,11 @@ mkdir -p figures/publication
 Now save this in your figures directory
 
 ```{r}
+##Ordination
 ggsave("figures/exploratory/STUDY_bray_ordination.pdf", plot = ORD, width = 6, height = 4, dpi = 300)
+
+##Barplot
+ggsave("figures/exploratory/STUDY_barplot_burn-status.pdf", plot = barplot, width = 6, height = 4, dpi = 300)
 ```
 
 You can also use cowplot or other packages if you need to combine figures and add in figure letters
