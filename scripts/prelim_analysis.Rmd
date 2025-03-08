@@ -39,7 +39,8 @@ required_packages <- c(
   "knitr",
   "lme4",
   "ggeffects", 
-  "cowplot"
+  "cowplot",
+  "ggsidekick"
 )
 
 # Install and load packages
@@ -71,6 +72,7 @@ seqdata_RARE@sam_data$burn_temp_C <- factor(seqdata_RARE@sam_data$burn_temp_C,
 
 Using default of bray for distance (bray is default method for ordinate function)
 
+####plotting
 ```{r message=FALSE, warning=FALSE}
 custom_colors <- c("#008080", "#52CCCC", "#FFE820", "orange", "#A80000")
 
@@ -80,10 +82,17 @@ ORD <- plot_ordination(seqdata_RARE, ORDtotalvals, color = "burn_temp_C", shape 
   scale_color_manual(values = custom_colors) +  # Custom colors
   geom_point(size = 3.5) +  # Increase point size
   labs(color = "Burn Temp (C)", shape = "Burn History") +  # Rename legend titles
-  theme_minimal()
+  theme_minimal()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 
 ORD
 ```
+
+#saving ord plot
+```{r}
+#ggsave("figures/publication/STUDY_bray_ordination.pdf", plot = ORD, width = 6, height = 4, dpi = 300)
+```
+
 
 ### PERMANOVA
 
