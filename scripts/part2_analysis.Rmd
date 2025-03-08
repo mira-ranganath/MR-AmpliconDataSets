@@ -132,10 +132,10 @@ Now save this in your figures directory
 
 ```{r}
 ##Ordination
-ggsave("figures/exploratory/STUDY_bray_ordination.pdf", plot = ORD, width = 6, height = 4, dpi = 300)
+#ggsave("figures/exploratory/STUDY_bray_ordination.pdf", plot = ORD, width = 6, height = 4, dpi = 300)
 
 ##Barplot
-ggsave("figures/exploratory/STUDY_barplot_burn-status.pdf", plot = barplot, width = 6, height = 4, dpi = 300)
+#ggsave("figures/exploratory/STUDY_barplot_burn-status.pdf", plot = barplot, width = 6, height = 4, dpi = 300)
 ```
 
 You can also use cowplot or other packages if you need to combine figures and add in figure letters
@@ -154,5 +154,5 @@ combined_plot
 Now save this combined figure in your figures directory
 
 ```{r}
-ggsave("figures/publication/Figure1_AB.pdf", plot = combined_plot, width = 6, height = 4, dpi = 300)
+#ggsave("figures/publication/Figure1_AB.pdf", plot = combined_plot, width = 6, height = 4, dpi = 300)
 ```

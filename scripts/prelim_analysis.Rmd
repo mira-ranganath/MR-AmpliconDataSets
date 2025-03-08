@@ -1,0 +1,138 @@
+---
+title: "exploratory figures"
+author: "Mira Ranganath"
+date: "2025-03-08"
+output: html_document
+---
+
+### Read in libraries
+```{r warning=FALSE}
+# Function to install and load packages
+install_and_load <- function(packages) {
+  for (pkg in packages) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      if (pkg == "phyloseq") {
+        if (!requireNamespace("BiocManager", quietly = TRUE)) {
+          install.packages("BiocManager")
+        }
+        BiocManager::install(pkg)
+      } else {
+        install.packages(pkg)
+      }
+    }
+    library(pkg, character.only = TRUE)
+  }
+}
+
+# List of required packages
+required_packages <- c(
+  "phyloseq",  # For working with sequencing data
+  "dplyr",     # For data manipulation
+  "ggplot2",   # For plotting
+  "readxl",    # For reading Excel files
+  "writexl",   # For writing Excel files
+  "tibble",    # For converting columns to row names
+  "stringr",   # For string manipulation
+  "viridis",   # For color palettes
+  "vegan",     # For statistics
+  "tidyr",     # For data org
+  "knitr",
+  "lme4",
+  "ggeffects", 
+  "cowplot"
+)
+
+# Install and load packages
+install_and_load(required_packages)
+```
+
+### Load data files
+
+```{r}
+seqdata_RARE<-readRDS(
+  "data/processed_data/phyloseq/STUDY_phyloseq_rare.rds")
+seqdata_NOTRARE<-readRDS(
+  "data/processed_data/phyloseq/STUDY_phyloseq_notrare.rds")
+```
+
+###Filter out plant reads
+```{r}
+seqdata_RARE <- subset_taxa(seqdata_RARE, Kingdom == "Fungi")
+```
+
+###Data prep
+```{r}
+seqdata_RARE@sam_data$burn_temp_C <- factor(seqdata_RARE@sam_data$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+```
+
+
+### Ordination (NMDS)
+
+Using default of bray for distance (bray is default method for ordinate function)
+
+```{r message=FALSE, warning=FALSE}
+custom_colors <- c("#008080", "#52CCCC", "#FFE820", "orange", "#A80000")
+
+ORDtotalvals<-ordinate(seqdata_RARE, "NMDS")
+
+ORD <- plot_ordination(seqdata_RARE, ORDtotalvals, color = "burn_temp_C", shape = "burn_status") +
+  scale_color_manual(values = custom_colors) +  # Custom colors
+  geom_point(size = 3.5) +  # Increase point size
+  labs(color = "Burn Temp (C)", shape = "Burn History") +  # Rename legend titles
+  theme_minimal()
+
+ORD
+```
+
+### PERMANOVA
+
+####Converting to data frames
+```{r}
+sam_data_df <- as.data.frame(as.matrix(sample_data(seqdata_RARE)))
+
+otu_table_df <- as.data.frame(t(otu_table(seqdata_RARE)))
+otu_table_df <- otu_table_df %>% 
+  filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
+```
+
+####Packages
+```{r}
+library(modelr)
+library(broom)
+library(AICcPermanova)
+```
+
+####burn status and burn temp
+```{r}
+status_temp_model <- adonis2(otu_table_df ~ burn_status*burn_temp_C, data=sam_data_df, perm=9999)
+status_temp_model
+AICc_permanova2(status_temp_model)
+```
+
+####burn temp for only unburned
+```{r}
+# Subset sample metadata
+sam_data_unburned <- sam_data_df %>% filter(burn_status == "Unburned")
+
+# Subset OTU table to match the filtered sample IDs
+otu_table_unburned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_unburned), ]
+
+unburned_model <- adonis2(otu_table_unburned ~ burn_temp_C, data = sam_data_unburned, perm = 9999)
+unburned_model
+```
+
+####burn temp for only burned
+```{r}
+# Subset sample metadata
+sam_data_burned <- sam_data_df %>% filter(burn_status == "Burned")
+
+# Subset OTU table to match the filtered sample IDs
+otu_table_burned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_burned), ]
+
+burned_model <- adonis2(otu_table_burned ~ burn_temp_C, data = sam_data_burned, perm = 9999)
+burned_model
+```
+
+
+
