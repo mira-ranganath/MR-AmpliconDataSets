@@ -63,7 +63,6 @@ seqdata_NOTRARE<-readRDS(
 seqdata_RARE <- subset_taxa(seqdata_RARE, Kingdom == "Fungi")
 ```
 
-
 ### Ordination (NMDS)
 
 Using default of bray for distance (bray is default method for ordinate function)
@@ -98,12 +97,23 @@ ps_melt <- ps_taxa %>%
   psmelt() %>%
   mutate(
     Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
-    Family = ifelse(Abundance < 0.05, "Other", Family)   # Group low-abundance taxa as "Other"
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
   )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
 
 # Step 5: Create the bar plot
 barplot <- ps_melt %>%
-  ggplot(aes(x = Sample, y = Abundance, fill = Family)) +
+  ggplot(aes(x = Sample, burn_temp_C, y = RelativeAbundance, fill = Family)) +
   geom_bar(stat = "identity", position = "stack") +
   labs(
     x = "Group",

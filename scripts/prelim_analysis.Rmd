@@ -5,7 +5,17 @@ date: "2025-03-08"
 output: html_document
 ---
 
-### Read in libraries
+```{r setup, include=FALSE}
+detach_package <- function(pkg, character.only = FALSE) {
+  if (!character.only) pkg <- deparse(substitute(pkg))
+  search_item <- paste0("package:", pkg)
+  if (search_item %in% search()) {
+    detach(search_item, unload = TRUE, character.only = TRUE)
+  }
+}
+```
+
+# Read in libraries
 ```{r warning=FALSE}
 # Function to install and load packages
 install_and_load <- function(packages) {
@@ -36,19 +46,17 @@ required_packages <- c(
   "viridis",   # For color palettes
   "vegan",     # For statistics
   "tidyr",     # For data org
-  "knitr",
   "lme4",
   "ggeffects", 
   "cowplot",
-  "ggsidekick"
+  "here"
 )
 
 # Install and load packages
 install_and_load(required_packages)
 ```
 
-### Load data files
-
+# Load data files
 ```{r}
 seqdata_RARE<-readRDS(
   "data/processed_data/phyloseq/STUDY_phyloseq_rare.rds")
@@ -56,23 +64,50 @@ seqdata_NOTRARE<-readRDS(
   "data/processed_data/phyloseq/STUDY_phyloseq_notrare.rds")
 ```
 
-###Filter out plant reads
+## Filter out plant reads
 ```{r}
 seqdata_RARE <- subset_taxa(seqdata_RARE, Kingdom == "Fungi")
 ```
 
-###Data prep
+##Creating new df with OTUS
+```{r}
+tax_mat <- tax_table(seqdata_RARE)
+
+tax_mat <- tax_mat %>% 
+  as.data.frame() %>% 
+  select(1:7)
+
+# Convert to character matrix to avoid factor/NA issues
+tax_mat_char <- apply(tax_mat, 2, as.character)
+
+# For each row (i.e., OTU), find the most specific (rightmost non-NA) taxon
+finest_taxa <- apply(tax_mat_char, 1, function(x) {
+  last_non_na <- tail(x[!is.na(x) & x != ""], 1)
+  if (length(last_non_na) == 0) "Unclassified" else last_non_na
+})
+
+# Combine OTU ID and finest taxon
+new_taxa_names <- paste(taxa_names(seqdata_RARE), "-", finest_taxa)
+
+# Apply new names
+taxa_names(seqdata_RARE) <- new_taxa_names
+```
+
+## Create temp factor levels
 ```{r}
 seqdata_RARE@sam_data$burn_temp_C <- factor(seqdata_RARE@sam_data$burn_temp_C, 
                                    levels = c(20, 45, 75, 105, 150), ordered = TRUE)
 ```
 
+# Data analysis
+
+## Plotting
 
 ### Ordination (NMDS)
 
 Using default of bray for distance (bray is default method for ordinate function)
 
-####plotting
+####plotting nmds
 ```{r message=FALSE, warning=FALSE}
 custom_colors <- c("#008080", "#52CCCC", "#FFE820", "orange", "#A80000")
 
@@ -80,32 +115,51 @@ ORDtotalvals<-ordinate(seqdata_RARE, "NMDS")
 
 ORD <- plot_ordination(seqdata_RARE, ORDtotalvals, color = "burn_temp_C", shape = "burn_status") +
   scale_color_manual(values = custom_colors) +  # Custom colors
+  stat_ellipse(aes(group = burn_status), level = 0.95, color = "orchid4", linewidth = .75, alpha=0.75)+
   geom_point(size = 3.5) +  # Increase point size
   labs(color = "Burn Temp (C)", shape = "Burn History") +  # Rename legend titles
   theme_minimal()+
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.border = element_rect(fill = NA, colour = "grey70", linewidth = 1))
 
 ORD
 ```
 
-#saving ord plot
+####saving ord plot
 ```{r}
-#ggsave("figures/publication/STUDY_bray_ordination.pdf", plot = ORD, width = 6, height = 4, dpi = 300)
+#ggsave("figures/publication/STUDY_bray_ordination.jpeg", plot = ORD, width = 6, height = 4, dpi = 300)
 ```
 
 
-### PERMANOVA
+### Rank abundance curves
 
-####Converting to data frames
+#### Subsetting data
+```{r}
+
+```
+
+#### Barplots
+```{r}
+plot_bar(seqdata_RARE, "Phylum", facet_grid = burn_status ~ burn_temp_C)
+```
+
+
+## Stats
+
+###Converting to data frames
 ```{r}
 sam_data_df <- as.data.frame(as.matrix(sample_data(seqdata_RARE)))
+sam_data_df <- sam_data_df %>% 
+  filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
 
 otu_table_df <- as.data.frame(t(otu_table(seqdata_RARE)))
 otu_table_df <- otu_table_df %>% 
   filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
 ```
 
-####Packages
+### PERMANOVA
+
+#### attach packages
 ```{r}
 library(modelr)
 library(broom)
@@ -114,34 +168,343 @@ library(AICcPermanova)
 
 ####burn status and burn temp
 ```{r}
-status_temp_model <- adonis2(otu_table_df ~ burn_status*burn_temp_C, data=sam_data_df, perm=9999)
+status_temp_model <- adonis2(otu_table_df ~ burn_status*burn_temp_C, data=sam_data_df, perm=9999, by="terms")
 status_temp_model
+summary(status_temp_model)
+
 AICc_permanova2(status_temp_model)
 ```
 
-####burn temp for only unburned
+#### detach packages
 ```{r}
-# Subset sample metadata
-sam_data_unburned <- sam_data_df %>% filter(burn_status == "Unburned")
-
-# Subset OTU table to match the filtered sample IDs
-otu_table_unburned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_unburned), ]
-
-unburned_model <- adonis2(otu_table_unburned ~ burn_temp_C, data = sam_data_unburned, perm = 9999)
-unburned_model
+detach_package(modelr)
+detach_package(broom)
+detach_package(AICcPermanova)
 ```
 
-####burn temp for only burned
+### Pairwise adonis2 (PERMANOVA)
+
+#### open packages
+```{r}
+library(devtools)
+
+##installation code:
+##Run: install_github("pmartinezarbizu/pairwiseAdonis/pairwiseAdonis")
+library(pairwiseAdonis)
+```
+
+#### Creating interaction terms
+```{r}
+pair_sam_data_df <- sam_data_df %>% 
+  mutate(burn_group = interaction(burn_status, burn_temp_C))
+```
+
+#### Creating distance matrix
+```{r}
+# Compute a distance matrix
+bray_dist <- vegdist(otu_table_df, method = "bray")
+```
+
+#### Running pairwise adonis -- Burn status * Burn temp
+```{r}
+pairwise.adonis2(bray_dist ~ burn_group, pair_sam_data_df)
+```
+
+
+
+
+### TITAN
+
+#### attach packages
+```{r}
+library(TITAN2)
+```
+
+####All samples
+
+##### All samples -- Prepare data for TITAN
+```{r}
+##filtering rare species from OTU table to help TITAN run
+seqdata_titan <- genefilter_sample(seqdata_RARE, filterfun_sample(function(x) x > 3), A=0.15*nsamples(seqdata_RARE))
+      
+seqdata_titan <- prune_taxa(seqdata_titan, seqdata_RARE)
+
+##Extracting otu table
+seqdf_titan <- as.data.frame(t(as(otu_table(seqdata_titan), "matrix")))
+
+##Remove extraction controls
+seqdf_titan <- seqdf_titan %>% 
+  filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
+
+##Remove NAs
+seqdf_titan <- na.omit(seqdf_titan)
+sam_data_df <- na.omit(sam_data_df)
+```
+
+##### All samples -- burn temp
+```{r}
+##Making burn temp numeric
+sam_data_df$burn_temp_C <- as.numeric(sam_data_df$burn_temp_C)
+
+##Remove comment below to run titan (takes a few mins)
+#all_temp_titan <- titan(env = sam_data_df$burn_temp_C, txa = seqdf_titan, pur.cut = 0.90)
+
+all_temp_titan$sppmax %>%
+as.data.frame() %>%
+dplyr::select(zenv.cp, freq, maxgrp, IndVal, purity, reliability, filter) %>%
+  utils::head()
+
+## Plotting titan outputs (only have positively responding taxa)
+all_temp_titan$sumz.cp
+head(all_temp_titan$sppmax)
+plot_sumz_density(all_temp_titan)
+plot_taxa_ridges(all_temp_titan, axis.text.y = 10, xlabel = expression(paste("Burn Temp (C)")), rel_heights = c(6,2.5), xlim = c(10, 115))
+dev.off() 
+plot_taxa(all_temp_titan, xlabel = "Burn Temp (C)")
+plot_cps(all_temp_titan, taxa.dist = FALSE, xlabel = "Burn Temp (C)", stacked=F)
+```
+
+
+####Burned only
+
+##### Burned samples -- subset dfs
 ```{r}
 # Subset sample metadata
 sam_data_burned <- sam_data_df %>% filter(burn_status == "Burned")
 
 # Subset OTU table to match the filtered sample IDs
-otu_table_burned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_burned), ]
-
-burned_model <- adonis2(otu_table_burned ~ burn_temp_C, data = sam_data_burned, perm = 9999)
-burned_model
+seqdata_burned <- subset_samples(seqdata_RARE, sample_names(seqdata_RARE) %in% rownames(sam_data_burned))
 ```
 
+##### Burned samples -- Prepare data for TITAN
+```{r}
+##filtering rare species from OTU table to help TITAN run
+seqdata_burned_titan <- genefilter_sample(seqdata_burned, filterfun_sample(function(x) x > 3), A=0.15*nsamples(seqdata_burned))
+      
+seqdata_burned_titan <- prune_taxa(seqdata_burned_titan, seqdata_burned)
+
+##Extracting otu table
+seqdf_burned_titan <- as.data.frame(t(as(otu_table(seqdata_burned_titan), "matrix")))
+
+##Remove extraction controls
+seqdf_burned_titan <- seqdf_burned_titan %>% 
+  filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
+
+##Remove NAs
+seqdf_burned_titan <- na.omit(seqdf_burned_titan)
+sam_data_burned <- na.omit(sam_data_burned)
+```
+
+##### Burned samples -- burn temp
+```{r}
+##Making burn temp numeric
+sam_data_burned$burn_temp_C <- as.numeric(sam_data_burned$burn_temp_C)
+
+##Remove comment below to run titan (takes a few mins)
+#burned_temp_titan <- titan(env = sam_data_burned$burn_temp_C, txa = seqdf_burned_titan, pur.cut = 0.90)
+
+burned_temp_titan$sppmax %>%
+as.data.frame() %>%
+dplyr::select(zenv.cp, freq, maxgrp, IndVal, purity, reliability, filter) %>%
+  utils::head()
+
+## Plotting titan outputs (only have positively responding taxa)
+burned_temp_titan$sumz.cp
+head(burned_temp_titan$sppmax)
+plot_sumz_density(burned_temp_titan)
+plot_taxa_ridges(burned_temp_titan, axis.text.y = 10, xlabel = expression(paste("Burn Temp (C)")), rel_heights = c(6,2.5), xlim = c(10, 115))
+dev.off() 
+plot_taxa(burned_temp_titan, xlabel = "Burn Temp (C)")
+plot_cps(burned_temp_titan, taxa.dist = FALSE, xlabel = "Burn Temp (C)", stacked=F)
+```
+
+
+
+
+####Unburned only
+
+##### Unburned samples -- subset dfs
+```{r}
+# Subset sample metadata
+sam_data_unburned <- sam_data_df %>% filter(burn_status == "Unburned")
+
+# Subset OTU table to match the filtered sample IDs
+seqdata_unburned <- subset_samples(seqdata_RARE, sample_names(seqdata_RARE) %in% rownames(sam_data_unburned))
+```
+
+##### Unburned samples -- Prepare data for TITAN
+```{r}
+##filtering rare species from OTU table to help TITAN run
+seqdata_unburned_titan <- genefilter_sample(seqdata_unburned, filterfun_sample(function(x) x > 3), A=0.15*nsamples(seqdata_unburned))
+      
+seqdata_unburned_titan <- prune_taxa(seqdata_unburned_titan, seqdata_unburned)
+
+##Extracting otu table
+seqdf_unburned_titan <- as.data.frame(t(as(otu_table(seqdata_unburned_titan), "matrix")))
+
+##Remove extraction controls
+seqdf_unburned_titan <- seqdf_unburned_titan %>% 
+  filter(!rownames(.) %in% c("N-N-D1", "N-N-D3"))
+
+##Remove NAs
+seqdf_unburned_titan <- na.omit(seqdf_unburned_titan)
+sam_data_unburned <- na.omit(sam_data_unburned)
+```
+
+##### Unburned samples -- burn temp
+```{r}
+##Making burn temp numeric
+sam_data_unburned$burn_temp_C <- as.numeric(sam_data_unburned$burn_temp_C)
+
+##Remove comment below to run titan (takes a few mins)
+unburned_temp_titan <- titan(env = sam_data_unburned$burn_temp_C, txa = seqdf_unburned_titan, pur.cut = 0.90)
+
+unburned_temp_titan$sppmax %>%
+as.data.frame() %>%
+dplyr::select(zenv.cp, freq, maxgrp, IndVal, purity, reliability, filter) %>%
+  utils::head()
+
+## Plotting titan outputs (only have positively responding taxa)
+unburned_temp_titan$sumz.cp
+head(unburned_temp_titan$sppmax)
+plot_sumz_density(unburned_temp_titan)
+plot_taxa_ridges(unburned_temp_titan, axis.text.y = 10, xlabel = expression(paste("Burn Temp (C)")), rel_heights = c(6,2.5), xlim = c(10, 115))
+dev.off() 
+plot_taxa(unburned_temp_titan, xlabel = "Burn Temp (C)")
+plot_cps(unburned_temp_titan, taxa.dist = FALSE, xlabel = "Burn Temp (C)", stacked=F)
+```
+
+
+
+
+#### detach packages
+```{r}
+detach_package(TITAN2)
+```
+
+##Diversity
+
+###Betadispersion
+```{r}
+z <- betadiver(otu_table_df, "z")
+mod <- with(sam_data_df, betadisper(z, burn_status))
+boxplot(mod)
+modaov<-aov(mod$distances~mod$group)
+summary(modaov)
+```
+
+
+### Beta diversity: Nestedness vs turnover
+#### Burned samples only -- burn temp
+
+##### Burned samples -- Subsetting samples
+```{r}
+burned_sam_data_df <- sam_data_df %>% 
+  filter(burn_status == "Burned")
+
+burned_otu_table_df <- otu_table_df %>%
+  filter(rownames(.) %in% rownames(burned_sam_data_df))
+```
+
+##### Burned samples -- Creating distance matrix
+```{r}
+library(betapart)
+
+##Turning df into a presence/absence matrix
+burned_dfPA <- ifelse(burned_otu_table_df>0,1,0)
+
+#Calculating community distances based on jaccard index(presence/abundance vs abundance)
+burned_dist <- beta.pair(burned_dfPA, index.family = "jaccard")
+
+#create a distance matrix for Sample Age
+burned_daydist <- dist(burned_sam_data_df$burn_temp_C)
+```
+
+##### Burned samples -- Nestedness
+```{r}
+mantel(burned_dist$beta.jne, burned_daydist)
+```
+
+##### Burned samples -- Turnover 
+```{r}
+#statisical test to compare turnover across sampling day
+mantel(burned_dist$beta.jtu, burned_daydist)
+```
+
+#### Unburned samples only -- burn temp
+
+##### Unburned samples -- Subsetting samples
+```{r}
+unburned_sam_data_df <- sam_data_df %>% 
+  filter(burn_status == "Unburned")
+
+unburned_otu_table_df <- otu_table_df %>%
+  filter(rownames(.) %in% rownames(unburned_sam_data_df))
+```
+
+##### Unburned samples -- Creating distance matrix
+```{r}
+library(betapart)
+
+##Turning df into a presence/absence matrix
+unburned_dfPA <- ifelse(unburned_otu_table_df>0,1,0)
+
+#Calculating community distances based on jaccard index(presence/abundance vs abundance)
+unburned_dist <- beta.pair(unburned_dfPA, index.family = "jaccard")
+
+#create a distance matrix for Sample Age
+unburned_daydist <- dist(unburned_sam_data_df$burn_temp_C)
+```
+
+##### Unburned samples -- Nestedness
+```{r}
+mantel(unburned_dist$beta.jne, unburned_daydist)
+```
+
+##### Unburned samples -- Turnover 
+```{r}
+#statisical test to compare turnover across sampling day
+mantel(unburned_dist$beta.jtu, unburned_daydist)
+```
+
+#### Unheated (20 C) samples only -- burn temp
+
+##### Unheated samples -- Subsetting samples
+```{r}
+unheated_sam_data_df <- sam_data_df %>% 
+  filter(burn_temp_C == "20")
+
+unheated_otu_table_df <- otu_table_df %>%
+  filter(rownames(.) %in% rownames(unheated_sam_data_df))
+```
+
+##### Unheated samples -- Creating distance matrix
+```{r}
+library(betapart)
+
+##Turning df into a presence/absence matrix
+unheated_dfPA <- ifelse(unheated_otu_table_df>0,1,0)
+
+#Calculating community distances based on jaccard index(presence/abundance vs abundance)
+unheated_dist <- beta.pair(unheated_dfPA, index.family = "jaccard")
+
+#convert to burn status to numeric
+dist_unheated_sam_data_df <- unheated_sam_data_df %>% 
+  mutate(burn_binary = ifelse(burn_status == "Burned", 1, 0))
+
+#create a distance matrix for burn status
+unheated_daydist <- dist(dist_unheated_sam_data_df$burn_binary) ####Not working properly
+```
+
+##### Unheated samples -- Nestedness
+```{r}
+mantel(unheated_dist$beta.jne, unheated_daydist) ####Not working properly
+```
+
+##### Unheated samples -- Turnover 
+```{r}
+#statisical test to compare turnover across sampling day
+mantel(unheated_dist$beta.jtu, unheated_daydist) 
+```
 
 

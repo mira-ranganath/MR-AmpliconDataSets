@@ -1,0 +1,414 @@
+---
+title: "Taxa plot draft"
+author: "Mira Ranganath"
+date: "2025-03-18"
+output: html_document
+---
+
+
+
+
+---
+title: "Figure 1 draft"
+author: "Mira Ranganath"
+date: "2024-11-11"
+output: html_document
+---
+
+#Opening packages
+```{r}
+library(ggplot2) ##plotting
+library(phyloseq) ##sequencing data package
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(tibble)
+library(stringr) 
+library(janitor)
+```
+
+#Importing data
+```{r}
+seqdata_RARE<-readRDS(
+  "data/processed_data/phyloseq/STUDY_phyloseq_rare.rds")
+```
+
+#TESTING PLOTS
+
+##Creating color palette
+```{r}
+#makes color palete
+ColourPalleteMulti <- function(df, group, subgroup){
+
+  # Find how many colour categories to create and the number of colours in each
+  categories <- aggregate(as.formula(paste(subgroup, group, sep="~" )), df, function(x) length(unique(x)))
+  category.start <- (scales::hue_pal(l = 100)(nrow(categories))) # Set the top of the colour pallete
+  category.end  <- (scales::hue_pal(l = 10)(nrow(categories))) # set the bottom
+
+  # Build Colour pallette
+  colours <- unlist(lapply(1:nrow(categories),
+                           function(i){
+                             colorRampPalette(colors = c(category.start[i], category.end[i]))(categories[i,2])}))
+  return(colours)
+}
+```
+
+##Custom theme
+```{r}
+tickplace <- seq(from=0, to=1, by=.5) 
+
+theme_taxa <- function(){ 
+    font <- "Arial"   #assign font family up front
+    
+    theme_minimal() %+replace%    #replace elements we want to change
+    
+    theme(
+      #grid elements
+      panel.grid.major = element_blank(),    #strip major gridlines
+      panel.grid.minor = element_blank(),    #strip minor gridlines
+      axis.ticks = element_blank(),          #strip axis ticks
+      
+      scale_y_continuous(breaks=tickplace,  #where to place the values
+                      labels=paste0(tickplace,'%')),
+      
+      #text elements
+      text = element_text(colour="grey40",
+                          family=font,
+                          size=16,
+                          face = 'bold'),
+      axis.text.x=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank(),
+      
+      #other
+      legend.position="bottom",
+      legend.spacing.y = unit(1.5, "lines"),
+      legend.text = element_text(face = 'italic'),
+      #legend.position = "none"
+      
+      strip.text = element_text(size = 18),
+      
+      aspect.ratio=10/4
+    )
+}
+```
+
+##Separate burned and unburned
+```{r}
+seqdata_unburned <- subset_samples(seqdata_RARE, burn_status == "Unburned")
+
+seqdata_burned <- subset_samples(seqdata_RARE, burn_status == "Burned")
+```
+
+==========================================================================================
+==========================================================================================
+
+##OTU chart -- combined
+```{r}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_RARE %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+#Count # phyla to set color palette
+Count = length(unique(ps_melt$Family))
+Count
+
+family <- unique(ps_melt$Family)
+
+ps_melt$Family <- factor(ps_melt$Family, levels = family)
+
+#plot with condensed phyla into "unknown" category
+colours <-ColourPalleteMulti(ps_melt, "Phylum", "Family")
+```
+
+```{r}
+phylums <- c("Ascomycota","Basidiomycota")
+##"Glomeromycota"
+
+df <- ps_melt
+df <- subset(df, Family != "< 2% abund.")
+df$Family <- as.character(df$Family)
+
+df$Phylum[!df$Phylum %in% phylums] <- "Others"
+df$Family[df$Phylum=="Others"] <- "Others"
+```
+
+```{r}
+library(forcats)
+df2 <- dplyr::select(df, Sample, Phylum, Family, burn_temp_C, Abundance) %>%
+  mutate(Phylum=factor(Phylum, levels=c(phylums)))%>%
+  group_by(Family)  # For this dataset only
+
+colours <- ColourPalleteMulti(df2, "Phylum", "Family")
+
+
+variable_names <- list(
+  "20" = "20 C" ,
+  "45" = "45 C",
+  "75" = "75 C",
+  "105" = "105 C",
+  "150" = "150 C"
+)
+
+variable_labeller <- function(variable,value){
+  return(variable_names[value])
+}
+
+##Vertical plot
+spatial_plot2 <- ggplot(data=df2, aes(x=Sample, y=Abundance, fill=Family)) +facet_grid(~burn_temp_C, scales="free",labeller= variable_labeller)
+test <- spatial_plot2 + geom_bar(aes(), stat="identity", position="fill") +
+scale_fill_manual("Taxa", values=colours, guide = "none") +
+  theme(axis.text.x=element_text(angle=90, vjust=0.5)) + guides(fill=guide_legend(ncol=4,title.position="top", title.hjust = 0.5, byrow = TRUE)) 
+
+```
+
+```{r}
+draft <- 
+  test + 
+  theme_taxa()+
+  scale_y_continuous(breaks=tickplace,  #where to place the values
+                      labels=paste0(tickplace,'%'))
+
+draft
+```
+
+==========================================================================================
+==========================================================================================
+##OTU chart -- Unburned
+
+```{r}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_unburned %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+#Count # phyla to set color palette
+Count = length(unique(ps_melt$Family))
+Count
+
+family <- unique(ps_melt$Family)
+
+ps_melt$Family <- factor(ps_melt$Family, levels = family)
+
+#plot with condensed phyla into "unknown" category
+colours <-ColourPalleteMulti(ps_melt, "Phylum", "Family")
+```
+
+```{r}
+phylums <- c("Ascomycota","Basidiomycota")
+##"Glomeromycota"
+
+df <- ps_melt
+df <- subset(df, Family != "< 2% abund.")
+df$Family <- as.character(df$Family)
+
+df$Phylum[!df$Phylum %in% phylums] <- "Others"
+df$Family[df$Phylum=="Others"] <- "Others"
+```
+
+```{r}
+library(forcats)
+df2 <- dplyr::select(df, Sample, Phylum, Family, burn_temp_C, Abundance) %>%
+  mutate(Phylum=factor(Phylum, levels=c(phylums)))%>%
+  group_by(Family)  # For this dataset only
+
+colours <- ColourPalleteMulti(df2, "Phylum", "Family")
+
+
+variable_names <- list(
+  "20" = "20 C" ,
+  "45" = "45 C",
+  "75" = "75 C",
+  "105" = "105 C",
+  "150" = "150 C"
+)
+
+variable_labeller <- function(variable,value){
+  return(variable_names[value])
+}
+
+##Vertical plot
+spatial_plot2 <- ggplot(data=df2, aes(x=Sample, y=Abundance, fill=Family)) +facet_grid(~burn_temp_C, scales="free",labeller= variable_labeller)
+test <- spatial_plot2 + geom_bar(aes(), stat="identity", position="fill") +
+scale_fill_manual("Taxa", values=colours, guide = "none") +
+  theme(axis.text.x=element_text(angle=90, vjust=0.5)) + guides(fill=guide_legend(ncol=4,title.position="top", title.hjust = 0.5, byrow = TRUE)) 
+
+```
+
+```{r}
+draft <- 
+  test + 
+  theme_taxa()+
+  scale_y_continuous(breaks=tickplace,  #where to place the values
+                      labels=paste0(tickplace,'%'))
+
+draft
+```
+
+==========================================================================================
+==========================================================================================
+##OTU chart -- Burned
+
+```{r}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_burned %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+#Count # phyla to set color palette
+Count = length(unique(ps_melt$Family))
+Count
+
+family <- unique(ps_melt$Family)
+
+ps_melt$Family <- factor(ps_melt$Family, levels = family)
+
+#plot with condensed phyla into "unknown" category
+colours <-ColourPalleteMulti(ps_melt, "Phylum", "Family")
+```
+
+```{r}
+phylums <- c("Ascomycota","Basidiomycota")
+##"Glomeromycota"
+
+df <- ps_melt
+df <- subset(df, Family != "< 2% abund.")
+df$Family <- as.character(df$Family)
+
+df$Phylum[!df$Phylum %in% phylums] <- "Others"
+df$Family[df$Phylum=="Others"] <- "Others"
+```
+
+```{r}
+library(forcats)
+df2 <- dplyr::select(df, Sample, Phylum, Family, burn_temp_C, Abundance) %>%
+  mutate(Phylum=factor(Phylum, levels=c(phylums)))%>%
+  group_by(Family)  # For this dataset only
+
+colours <- ColourPalleteMulti(df2, "Phylum", "Family")
+
+
+variable_names <- list(
+  "20" = "20 C" ,
+  "45" = "45 C",
+  "75" = "75 C",
+  "105" = "105 C",
+  "150" = "150 C"
+)
+
+variable_labeller <- function(variable,value){
+  return(variable_names[value])
+}
+
+##Vertical plot
+spatial_plot2 <- ggplot(data=df2, aes(x=Sample, y=Abundance, fill=Family)) +facet_grid(~burn_temp_C, scales="free",labeller= variable_labeller)
+test <- spatial_plot2 + geom_bar(aes(), stat="identity", position="fill") +
+scale_fill_manual("Taxa", values=colours, guide = "none") +
+  theme(axis.text.x=element_text(angle=90, vjust=0.5)) + guides(fill=guide_legend(ncol=4,title.position="top", title.hjust = 0.5, byrow = TRUE)) 
+
+```
+
+```{r}
+draft <- 
+  test + 
+  theme_taxa()+
+  scale_y_continuous(breaks=tickplace,  #where to place the values
+                      labels=paste0(tickplace,'%'))
+
+draft
+```
+==========================================================================================
+==========================================================================================
+
+#Saving plots
+```{r}
+#ggsave("xxx.jpeg", plot=xxx, device="jpeg", dpi=300, width= 12.5, height = 12)
+
+#ggsave("xxx.jpeg", plot=xxx, device="jpeg", dpi=300, width= 12.5, height = 12)
+```
+
+
+==========================================================================================
+==========================================================================================
+
+
+

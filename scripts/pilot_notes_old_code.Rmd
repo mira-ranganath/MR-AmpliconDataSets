@@ -1,0 +1,197 @@
+---
+title: "notes_old_code"
+author: "Mira Ranganath"
+date: "2025-04-16"
+output: html_document
+---
+
+#Can't split perm like this
+- maybe useful for filtering and subsetting other things
+####burn temp for only unburned
+```{r}
+# Subset sample metadata
+sam_data_unburned <- sam_data_df %>% filter(burn_status == "Unburned")
+
+# Subset OTU table to match the filtered sample IDs
+otu_table_unburned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_unburned), ]
+
+unburned_model <- adonis2(otu_table_unburned ~ burn_temp_C, data = sam_data_unburned, perm = 9999, by="terms")
+unburned_model
+```
+
+####burn temp for only burned
+```{r}
+# Subset sample metadata
+sam_data_burned <- sam_data_df %>% filter(burn_status == "Burned")
+
+# Subset OTU table to match the filtered sample IDs
+otu_table_burned <- otu_table_df[rownames(otu_table_df) %in% rownames(sam_data_burned), ]
+
+burned_model <- adonis2(otu_table_burned ~ burn_temp_C, data = sam_data_burned, perm = 9999, by="terms")
+burned_model
+```
+
+
+#Taxa barplot not working
+- phyla not correctly assigned
+###Taxa barplot
+```{r message=FALSE, warning=FALSE}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_RARE %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+# Step 5: Create the bar plot
+barplot <- ps_melt %>%
+  ggplot(aes(x = Sample, burn_temp_C, y = RelativeAbundance, fill = Family)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    x = "Group",
+    y = "Relative Abundance",
+    fill = "Family") +
+  theme_minimal() +
+  scale_fill_viridis_d(option = "plasma")
+    # Use viridis color scale
+
+# Display the plot
+print(barplot)
+```
+
+
+##Separate burned and unburned
+```{r}
+seqdata_unburned <- subset_samples(seqdata_RARE, burn_status == "Unburned")
+
+seqdata_burned <- subset_samples(seqdata_RARE, burn_status == "Burned")
+```
+
+### Unburned - Taxa barplot
+```{r message=FALSE, warning=FALSE}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_unburned %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+# Step 5: Create the bar plot
+barplot <- ps_melt %>%
+  ggplot(aes(x = Sample, burn_temp_C, y = RelativeAbundance, fill = Family)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    x = "Group",
+    y = "Relative Abundance",
+    fill = "Family") +
+  theme_minimal() +
+  scale_fill_viridis_d(option = "plasma")
+    # Use viridis color scale
+
+# Display the plot
+print(barplot)
+```
+
+### Burned - Taxa barplot
+```{r message=FALSE, warning=FALSE}
+# Step 1: Merge samples by a grouping variable (e.g., "SampleType")
+ps_merged <- seqdata_burned %>%
+  merge_samples("burn_temp_C")
+
+# Step 2: Convert to relative abundance
+ps_rel <- ps_merged %>%
+  transform_sample_counts(function(x) x / sum(x))
+
+# Step 3: Aggregate at the taxonomic level of interest (e.g., "Order")
+ps_taxa <- ps_rel %>%
+  tax_glom(taxrank = "Family")
+
+# Step 4: Melt the phyloseq object for visualization
+ps_melt <- ps_taxa %>%
+  psmelt() %>%
+  mutate(
+    Sample = factor(Sample, levels = unique(Sample)),  # Ensure Sample is a factor
+    Family = ifelse(Abundance < 0.02, "Other", Family)   # Group low-abundance taxa as "Other"
+  )
+
+##convert burn temp to factor
+ps_melt$burn_temp_C <- factor(ps_melt$burn_temp_C, 
+                                   levels = c(20, 45, 75, 105, 150), ordered = TRUE)
+
+ps_melt$Sample <- factor(ps_melt$Sample, levels = unique(ps_melt$Sample[order(ps_melt$burn_temp_C)]))
+
+##normalize abundance
+ps_melt <- ps_melt %>%
+  group_by(Sample) %>%
+  mutate(RelativeAbundance = Abundance / sum(Abundance) * 100)
+
+# Step 5: Create the bar plot
+barplot <- ps_melt %>%
+  ggplot(aes(x = Sample, burn_temp_C, y = RelativeAbundance, fill = Family)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(
+    x = "Group",
+    y = "Relative Abundance",
+    fill = "Family") +
+  theme_minimal() +
+  scale_fill_viridis_d(option = "plasma")
+    # Use viridis color scale
+
+# Display the plot
+print(barplot)
+```
+
+
+
+
+
+
+
